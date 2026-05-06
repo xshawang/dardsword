@@ -105,7 +105,8 @@ app.all('/api/first', (req, res) => {
     }
 });
 
-// 启动服务
-app.listen(PORT, () => {
-    console.log(`服务器已启动：http://127.0.0.1:${PORT}`);
+// 启动服务（绑定 0.0.0.0 允许局域网/公网访问）
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`服务器已启动：http://0.0.0.0:${PORT}`);
+    console.log(`本机访问：http://127.0.0.1:${PORT}`);
 });
