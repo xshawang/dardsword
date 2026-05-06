@@ -1,12 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-
+const  PORT=8088
 // 配置
 const CONFIG = {
     serverHost: '127.0.0.1',
     serverPort: '8088',
-    baseUrl: 'http://127.0.0.1:8088'
+    baseUrl: 'http://43.156.104.233'
 };
 
 const projectRoot = __dirname;
