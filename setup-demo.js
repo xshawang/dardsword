@@ -124,7 +124,7 @@ function modifyServerJs() {
 
 // 静态文件服务 - DarkSword-RCE 目录
 app.use(express.static(path.join(__dirname, '../DarkSword-RCE')));
-log('静态文件服务已启动: DarkSword-RCE 目录');`
+console.log('静态文件服务已启动: DarkSword-RCE 目录');`
     );
     
     // 添加启动日志
