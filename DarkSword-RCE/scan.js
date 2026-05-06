@@ -5,7 +5,7 @@
 // 如果 server.js 运行在本地电脑，请改为电脑在局域网中的 IP
 // 例如：const server_url = "http://192.168.1.100:8088";
 // ==============================================
-const server_url = "http://43.156.104.233:8088";
+const server_url = "http://43.156.104.233";
 
 const DEBUG = true;
 const LOG_FILE = '/tmp/scan_debug.log';
